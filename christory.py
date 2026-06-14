@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["textual>=0.86"]
-# ///
 """Chrome history search TUI."""
 from __future__ import annotations
 
@@ -745,5 +740,9 @@ class ChromeHistoryApp(App):
         pass
 
 
-if __name__ == "__main__":
+def main() -> None:
     ChromeHistoryApp().run()
+
+
+if __name__ == "__main__":
+    main()
