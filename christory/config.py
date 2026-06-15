@@ -1,5 +1,7 @@
 """UI constants, sort metadata, help text, and CSS."""
 
+from .theme import ACCENT, FILTER_RESULTS_GAP, KEY_HIGHLIGHT
+
 # Flip to True to bring the Visits column back into the main table.
 SHOW_VISITS = False
 
@@ -26,30 +28,47 @@ SORT_DESC_ARROW = "▼"
 SORT_ASC_ARROW = "▲"
 
 
+_K = KEY_HIGHLIGHT
 HELP_TEXT = (
-    "[b]General[/b]    : "
-    "[b]q[/b] / [b]ctrl-c[/b]: quit  [b]r[/b]: refresh  [b]tab[/b]: switch focus  "
-    "[b]/[/b]: focus search  [b]enter[/b]: focus table / open url  "
-    "[b]↓[/b] / [b]esc[/b]: from filter → table  [b]s/S[/b]: sort col / dir\n"
-    "[b]Filter[/b]     : "
-    "[b]search[/b]: URL + title  [b]domain[/b]: URL only  "
-    "[b]date[/b]: prefix or range [b]A..B[/b] / [b]A..[/b] / [b]..B[/b] — or [b]enter[/b] for calendar\n"
-    "[b]Navigation[/b] : "
-    "[b]j[/b]/[b]↓[/b]: down  [b]k[/b]/[b]↑[/b]: up  "
-    "[b]PageUp[/b] / [b]Ctrl-U[/b]: page up  "
-    "[b]PageDown[/b] / [b]Ctrl-D[/b]: page down  "
-    "[b]g[/b]: top  [b]G[/b]: bottom\n"
-    "[b]Commands[/b]   : "
-    "[b]i[/b]: info  [b]c[/b]: copy URL  [b]a[/b]: copy all  "
-    "[b]enter[/b]: open URL  [b]esc[/b]: dismiss modal"
+    f"[{_K}]Filter[/]  : "
+    f"[{_K}]/[/]: focus search   "
+    f"[{_K}]tab[/]: next field   "
+    f"[{_K}]↓[/]/[{_K}]esc[/]: leave filter   "
+    f"[{_K}]enter[/] on date\n"
+    # f"[{_K}]Calendar[/]: "
+    f"[{_K}]Move[/]    : "
+    f"[{_K}]j[/]/[{_K}]↓[/] down   "
+    f"[{_K}]k[/]/[{_K}]↑[/]: up   "
+    f"[{_K}]PgUp[/]/[{_K}]Ctrl-U[/] prev page   "
+    f"[{_K}]PgDn[/]/[{_K}]Ctrl-D[/]: next page   "
+    f"[{_K}]g[/]: go to top   "
+    f"[{_K}]G[/]: got to bottom\n"
+    f"[{_K}]Row[/]     : "
+    f"[{_K}]enter[/]: open URL   "
+    f"[{_K}]i[/]: info   "
+    f"[{_K}]c[/]: copy URL   "
+    f"[{_K}]a[/]: copy all\n"
+    f"[{_K}]View[/]    : "
+    f"[{_K}]s[/]/[{_K}]S[/]: sort col / dir   "
+    f"[{_K}]r[/]: refresh   "
+    f"[{_K}]q[/] or [{_K}]Ctrl-C[/]: quit   "
+    f"[{_K}]esc[/]: close modal\n\n"
+    f"(date syntax: [{_K}]YYYY[-MM[-DD]][/]  ·  [{_K}]A..B[/] / [{_K}]A..[/] / [{_K}]..B[/])\n"
 )
 
 
-APP_CSS = """
-#filter-bar { height: 3; padding: 0 2; }
-#filter-bar Input { width: 1fr; margin-right: 1; }
-#filter-bar Input:last-of-type { margin-right: 0; }
-#status { padding: 0 2; height: 1; color: $text-muted; }
-DataTable { height: 1fr; margin: 0 2; }
-#help { background: $boost; padding: 0 2; color: $text-muted; height: auto; }
+APP_CSS = f"""
+#filter-bar {{
+    height: 3;
+    padding: 0 2;
+    margin-bottom: {FILTER_RESULTS_GAP};
+}}
+#filter-bar Input {{ width: 1fr; margin-right: 1; }}
+#filter-bar Input:focus {{ border: tall {ACCENT}; }}
+#filter-bar Input:last-of-type {{ margin-right: 0; }}
+#status {{ padding: 0 2; height: 1; color: $text-muted; }}
+DataTable {{ height: 1fr; margin: 0 2; }}
+DataTable > .datatable--cursor {{ background: {ACCENT}; color: $text; }}
+DataTable > .datatable--header {{ color: {ACCENT}; }}
+#help {{ background: $boost; padding: 0 2; color: $text-muted; height: auto; }}
 """

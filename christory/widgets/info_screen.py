@@ -9,6 +9,7 @@ from textual.widgets import Static
 
 from ..clipboard import copy_text_to_clipboard
 from ..db import HistoryRow
+from ..theme import ACCENT
 
 
 class InfoScreen(ModalScreen):
@@ -18,17 +19,17 @@ class InfoScreen(ModalScreen):
         Binding("a", "copy_all", "Copy all"),
     ]
 
-    DEFAULT_CSS = """
-    InfoScreen { align: center middle; }
-    #info-box {
+    DEFAULT_CSS = f"""
+    InfoScreen {{ align: center middle; }}
+    #info-box {{
         width: 80%;
         max-width: 110;
         height: auto;
         padding: 1 2;
-        border: round $accent;
+        border: round {ACCENT};
         background: $surface;
-    }
-    #info-box Static { margin-bottom: 1; }
+    }}
+    #info-box Static {{ margin-bottom: 1; }}
     """
 
     def __init__(self, row: HistoryRow) -> None:

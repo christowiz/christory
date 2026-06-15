@@ -23,6 +23,7 @@ from .config import (
 )
 from .date_filter import DateFilter
 from .db import HistoryDatabase, HistoryRow
+from .theme import STATUS_ERROR
 from .widgets import DatePickerScreen, FilterInput, HistoryTable, InfoScreen
 
 
@@ -98,7 +99,7 @@ class ChromeHistoryApp(App):
             self.db.snapshot()
             self.run_search()
         except FileNotFoundError as e:
-            status.update(f"[red]{e}[/red]")
+            status.update(f"[{STATUS_ERROR}]{e}[/]")
 
     def update_sort_status(self) -> None:
         table = self.query_one(HistoryTable)

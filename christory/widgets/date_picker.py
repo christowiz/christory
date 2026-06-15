@@ -11,6 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from ..date_filter import DateFilter
+from ..theme import ACCENT, CAL_RANGE_BOTH, CAL_RANGE_END, CAL_RANGE_START, CAL_TODAY
 
 
 class DatePickerScreen(ModalScreen):
@@ -34,18 +35,18 @@ class DatePickerScreen(ModalScreen):
         Binding("t", "today", show=False),
     ]
 
-    DEFAULT_CSS = """
-    DatePickerScreen { align: center middle; }
-    #cal-box {
+    DEFAULT_CSS = f"""
+    DatePickerScreen {{ align: center middle; }}
+    #cal-box {{
         width: 32;
         height: auto;
         padding: 1 2;
-        border: round $accent;
+        border: round {ACCENT};
         background: $surface;
-    }
-    #cal-header { width: 100%; text-align: center; margin-bottom: 1; }
-    #cal-grid { width: 100%; margin-bottom: 1; }
-    #cal-help { width: 100%; color: $text-muted; }
+    }}
+    #cal-header {{ width: 100%; text-align: center; margin-bottom: 1; }}
+    #cal-grid {{ width: 100%; margin-bottom: 1; }}
+    #cal-help {{ width: 100%; color: $text-muted; }}
     """
 
     def __init__(
@@ -95,18 +96,18 @@ class DatePickerScreen(ModalScreen):
                 if is_cursor:
                     styles.append("reverse")
                 elif is_start and is_end:
-                    styles.append("b magenta")
+                    styles.append(CAL_RANGE_BOTH)
                 elif is_start:
-                    styles.append("b green")
+                    styles.append(CAL_RANGE_START)
                 elif is_end:
-                    styles.append("b red")
+                    styles.append(CAL_RANGE_END)
                 else:
                     if range_lo is not None and range_lo <= day <= range_hi:
                         styles.append("underline")
                     if day.month != m:
                         styles.append("dim")
                     elif day == today:
-                        styles.append("b yellow")
+                        styles.append(CAL_TODAY)
                 if styles:
                     style_str = " ".join(styles)
                     label = f"[{style_str}]{label}[/{style_str}]"
