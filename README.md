@@ -2,6 +2,8 @@
 
 A terminal UI for searching local Chrome history by text, domain, and date.
 
+I got annoyed by the inabilty to filter my browsing history to find things so I created this utility for quick filtering.
+
 Reads `~/Library/Application Support/Google/Chrome/Default/History` (read-only, via a temp snapshot) and renders results in a sortable table with marquee-scrolling rows, a calendar date picker, and OSC52 clipboard support.
 
 ## Requirements
@@ -16,14 +18,14 @@ Reads `~/Library/Application Support/Google/Chrome/Default/History` (read-only, 
 Install as an isolated tool — places a real `christory` executable on your `PATH`:
 
 ```sh
-uv tool install git+https://github.com/<owner>/<repo>.git#subdirectory=chrome-search-history-textual
+uv tool install git+https://github.com/<owner>/<repo>.git#subdirectory=christory
 ```
 
 Or from a local clone:
 
 ```sh
 git clone https://github.com/<owner>/<repo>.git
-uv tool install ./<repo>/chrome-search-history-textual
+uv tool install ./<repo>/christory
 ```
 
 Verify:
@@ -36,7 +38,7 @@ christory          # launches the TUI
 Reinstall after upstream updates:
 
 ```sh
-uv tool install --reinstall git+https://github.com/<owner>/<repo>.git#subdirectory=chrome-search-history-textual
+uv tool install --reinstall git+https://github.com/<owner>/<repo>.git#subdirectory=christory
 ```
 
 Uninstall:
@@ -50,13 +52,13 @@ uv tool uninstall christory
 ### Without uv
 
 ```sh
-pipx install ./chrome-search-history-textual
+pipx install ./christory
 ```
 
 …or with plain pip into a venv of your choice:
 
 ```sh
-pip install ./chrome-search-history-textual
+pip install ./christory
 ```
 
 ## Usage
@@ -120,7 +122,7 @@ After editing, reinstall: `uv tool install --reinstall .` (from the project dir)
 
 ```sh
 git clone https://github.com/<owner>/<repo>.git
-cd <repo>/chrome-search-history-textual
+cd <repo>/christory
 uv sync                  # creates .venv with textual + dev deps
 uv run christory         # run from source
 ```

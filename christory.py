@@ -58,7 +58,7 @@ HELP_TEXT = (
     "[b]↓[/b] / [b]esc[/b]: from filter → table  [b]s/S[/b]: sort col / dir\n"
     "[b]Filter[/b]     : "
     "[b]search[/b]: URL + title  [b]domain[/b]: URL only  "
-    "[b]date[/b]: prefix e.g. 2026-05-20 — or [b]enter[/b] for calendar\n"
+    "[b]date[/b]: prefix or range [b]A..B[/b] / [b]A..[/b] / [b]..B[/b] — or [b]enter[/b] for calendar\n"
     "[b]Navigation[/b] : "
     "[b]j[/b]/[b]↓[/b]: down  [b]k[/b]/[b]↑[/b]: up  "
     "[b]PageUp[/b] / [b]Ctrl-U[/b]: page up  "
@@ -86,23 +86,48 @@ def webkit_to_local(webkit_us: int) -> str:
     )
 
 
-def search_history(db, text, domain, date_prefix, limit=ROW_LIMIT):
+DATE_SQL_EXPR = (
+    "strftime('%Y-%m-%d %H:%M', last_visit_time/1000000 - 11644473600, "
+    "'unixepoch', 'localtime')"
+)
+
+
+def search_history(db, text, domain, date_value, limit=ROW_LIMIT):
     text_like = f"%{text}%"
     domain_like = f"%{domain}%"
-    date_like = f"{date_prefix}%"
+    date_filter = _parse_date_filter(date_value)
+
+    where_parts = [
+        "(url LIKE :text OR title LIKE :text)",
+        "url LIKE :domain",
+    ]
+    params: dict = {"text": text_like, "domain": domain_like, "limit": limit}
+
+    if date_filter is not None:
+        mode = date_filter["mode"]
+        if mode == "like":
+            where_parts.append(f"{DATE_SQL_EXPR} LIKE :date")
+            params["date"] = date_filter["value"]
+        elif mode == "range":
+            if date_filter["start"] is not None:
+                where_parts.append(f"{DATE_SQL_EXPR} >= :date_start")
+                params["date_start"] = date_filter["start"]
+            if date_filter["end"] is not None:
+                where_parts.append(f"{DATE_SQL_EXPR} <= :date_end")
+                params["date_end"] = date_filter["end"]
+        elif mode == "none":
+            where_parts.append("0 = 1")
+
+    sql = (
+        "SELECT last_visit_time, visit_count, COALESCE(title, ''), url\n"
+        "FROM urls\n"
+        f"WHERE {' AND '.join(where_parts)}\n"
+        "ORDER BY last_visit_time DESC\n"
+        "LIMIT :limit"
+    )
+
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
-        return conn.execute(
-            """
-            SELECT last_visit_time, visit_count, COALESCE(title, ''), url
-            FROM urls
-            WHERE (url LIKE :text OR title LIKE :text)
-              AND url LIKE :domain
-              AND strftime('%Y-%m-%d %H:%M', last_visit_time/1000000 - 11644473600, 'unixepoch', 'localtime') LIKE :date
-            ORDER BY last_visit_time DESC
-            LIMIT :limit
-            """,
-            {"text": text_like, "domain": domain_like, "date": date_like, "limit": limit},
-        ).fetchall()
+        return conn.execute(sql, params).fetchall()
 
 
 def marquee_slice(text: str, width: int, offset: int) -> str:
@@ -159,10 +184,72 @@ def _parse_date_input(value: str) -> date | None:
     return None
 
 
+def _expand_partial(value: str, end_of: bool) -> str | None:
+    """Expand 'YYYY' / 'YYYY-MM' / 'YYYY-MM-DD' into a 'YYYY-MM-DD HH:MM'
+    timestamp matching the SQL strftime format. `end_of=False` returns the
+    start of the period, `end_of=True` returns the inclusive end."""
+    for fmt, kind in (("%Y-%m-%d", "day"), ("%Y-%m", "month"), ("%Y", "year")):
+        try:
+            d = datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+        if kind == "day":
+            return f"{d.strftime('%Y-%m-%d')} {'23:59' if end_of else '00:00'}"
+        if kind == "month":
+            if end_of:
+                last = calendar.monthrange(d.year, d.month)[1]
+                return f"{d.year:04d}-{d.month:02d}-{last:02d} 23:59"
+            return f"{d.year:04d}-{d.month:02d}-01 00:00"
+        return f"{d.year:04d}-12-31 23:59" if end_of else f"{d.year:04d}-01-01 00:00"
+    return None
+
+
+def _parse_date_filter(value: str) -> dict | None:
+    """Parse the date filter input into a SQL filter descriptor.
+
+    Returns None for empty input. Without '..', returns LIKE-prefix mode for
+    backward compatibility ({'mode': 'like', 'value': '<prefix>%'}). With
+    '..', returns range mode with start/end timestamps (each may be None for
+    open-ended bounds). If a non-empty range half can't be parsed, returns
+    {'mode': 'none'} to short-circuit to an empty result set."""
+    value = value.strip()
+    if not value:
+        return None
+    if ".." in value:
+        a, _, b = value.partition("..")
+        a, b = a.strip(), b.strip()
+        start = _expand_partial(a, end_of=False) if a else None
+        end = _expand_partial(b, end_of=True) if b else None
+        if (a and start is None) or (b and end is None):
+            return {"mode": "none"}
+        return {"mode": "range", "start": start, "end": end}
+    return {"mode": "like", "value": f"{value}%"}
+
+
+def _picker_seed(
+    value: str,
+) -> tuple[date | None, date | None, date | None]:
+    """Returns (cursor, start, end) reflecting the current date filter value
+    so the calendar opens showing what's already applied."""
+    value = value.strip()
+    if not value:
+        return None, None, None
+    if ".." in value:
+        a, _, b = value.partition("..")
+        a_d = _parse_date_input(a.strip()) if a.strip() else None
+        b_d = _parse_date_input(b.strip()) if b.strip() else None
+        cursor = b_d or a_d
+        return cursor, a_d, b_d
+    d = _parse_date_input(value)
+    return d, d, d
+
+
 class DatePickerScreen(ModalScreen):
     BINDINGS = [
         Binding("escape", "cancel", show=False),
         Binding("enter", "select", show=False),
+        Binding("s", "set_start", show=False),
+        Binding("e", "set_end", show=False),
         Binding("left", "move(-1,0,0)", show=False),
         Binding("h", "move(-1,0,0)", show=False),
         Binding("right", "move(1,0,0)", show=False),
@@ -192,20 +279,24 @@ class DatePickerScreen(ModalScreen):
     #cal-help { width: 100%; color: $text-muted; }
     """
 
-    def __init__(self, initial: date | None = None) -> None:
+    def __init__(
+        self,
+        initial: date | None = None,
+        initial_start: date | None = None,
+        initial_end: date | None = None,
+        on_filter_change=None,
+    ) -> None:
         super().__init__()
         self.selected = initial or date.today()
+        self.start: date | None = initial_start
+        self.end: date | None = initial_end
+        self._on_filter_change = on_filter_change
 
     def compose(self) -> ComposeResult:
         yield Vertical(
             Static(self._header_text(), id="cal-header"),
             Static(self._grid_text(), id="cal-grid"),
-            Static(
-                "[b]←→ h/l[/b] day  [b]↑↓ j/k[/b] week  "
-                "[b][ ][/b] month  [b]{ }[/b] year  "
-                "[b]t[/b] today  [b]enter[/b] pick  [b]esc[/b] cancel",
-                id="cal-help",
-            ),
+            Static(self._help_text(), id="cal-help"),
             id="cal-box",
         )
 
@@ -219,24 +310,52 @@ class DatePickerScreen(ModalScreen):
         y, m = self.selected.year, self.selected.month
         weeks = calendar.Calendar(firstweekday=6).monthdatescalendar(y, m)
         today = date.today()
+        if self.start is not None and self.end is not None:
+            range_lo, range_hi = sorted([self.start, self.end])
+        else:
+            range_lo = range_hi = None
         lines = ["[dim]Su Mo Tu We Th Fr Sa[/dim]"]
         for week in weeks:
             cells = []
             for day in week:
                 label = f"{day.day:>2}"
-                if day == self.selected:
-                    label = f"[reverse]{label}[/reverse]"
-                elif day.month != m:
-                    label = f"[dim]{label}[/dim]"
-                elif day == today:
-                    label = f"[b yellow]{label}[/b yellow]"
+                is_cursor = day == self.selected
+                is_start = self.start is not None and day == self.start
+                is_end = self.end is not None and day == self.end
+                styles: list[str] = []
+                if is_cursor:
+                    styles.append("reverse")
+                elif is_start and is_end:
+                    styles.append("b magenta")
+                elif is_start:
+                    styles.append("b green")
+                elif is_end:
+                    styles.append("b red")
+                else:
+                    if range_lo is not None and range_lo <= day <= range_hi:
+                        styles.append("underline")
+                    if day.month != m:
+                        styles.append("dim")
+                    elif day == today:
+                        styles.append("b yellow")
+                if styles:
+                    style_str = " ".join(styles)
+                    label = f"[{style_str}]{label}[/{style_str}]"
                 cells.append(label)
             lines.append(" ".join(cells))
         return "\n".join(lines)
 
+    def _help_text(self) -> str:
+        return (
+            "[b]←→ h/l[/b] day  [b]↑↓ j/k[/b] week  "
+            "[b][ ][/b] month  [b]{ }[/b] year  [b]t[/b] today  "
+            "[b]s[/b] start  [b]e[/b] end  [b]enter[/b] day  [b]esc[/b] close"
+        )
+
     def _refresh_cal(self) -> None:
         self.query_one("#cal-header", Static).update(self._header_text())
         self.query_one("#cal-grid", Static).update(self._grid_text())
+        self.query_one("#cal-help", Static).update(self._help_text())
 
     def action_move(self, days: int, months: int, years: int) -> None:
         new = self.selected
@@ -264,7 +383,37 @@ class DatePickerScreen(ModalScreen):
         self.dismiss(None)
 
     def action_select(self) -> None:
-        self.dismiss(self.selected.strftime("%Y-%m-%d"))
+        value = self.selected.strftime("%Y-%m-%d")
+        if self._on_filter_change is not None:
+            self._on_filter_change(value)
+        self.dismiss(None)
+
+    def action_set_start(self) -> None:
+        self.start = self.selected
+        self._emit_filter()
+        self._refresh_cal()
+
+    def action_set_end(self) -> None:
+        self.end = self.selected
+        self._emit_filter()
+        self._refresh_cal()
+
+    def _emit_filter(self) -> None:
+        s, e = self.start, self.end
+        if s is None and e is None:
+            return
+        if s is not None and e is not None:
+            lo, hi = sorted([s, e])
+            if lo == hi:
+                value = lo.strftime("%Y-%m-%d")
+            else:
+                value = f"{lo.strftime('%Y-%m-%d')}..{hi.strftime('%Y-%m-%d')}"
+        elif s is not None:
+            value = f"{s.strftime('%Y-%m-%d')}.."
+        else:
+            value = f"..{e.strftime('%Y-%m-%d')}"
+        if self._on_filter_change is not None:
+            self._on_filter_change(value)
 
 
 class InfoScreen(ModalScreen):
@@ -601,7 +750,7 @@ class ChromeHistoryApp(App):
         yield Horizontal(
             FilterInput(placeholder="search text…  (/ to focus)", id="search"),
             FilterInput(placeholder="domain…  e.g. github.com", id="domain"),
-            FilterInput(placeholder="date…  e.g. 2026-05-20 or Enter for calendar", id="date"),
+            FilterInput(placeholder="date…  e.g. 2026-05-20 or 2026-05-20..2026-05-25", id="date"),
             id="filter-bar",
         )
         yield Static("", id="status")
@@ -705,17 +854,20 @@ class ChromeHistoryApp(App):
     @on(Input.Submitted)
     def _input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "date":
+            cursor, start, end = _picker_seed(event.value)
             self._open_modal(
-                DatePickerScreen(_parse_date_input(event.value)),
-                self._date_picked,
+                DatePickerScreen(
+                    initial=cursor,
+                    initial_start=start,
+                    initial_end=end,
+                    on_filter_change=self._apply_date_filter,
+                ),
             )
         else:
             self.query_one(HistoryTable).focus()
 
-    def _date_picked(self, picked) -> None:
-        if picked:
-            date_input = self.query_one("#date", Input)
-            date_input.value = picked
+    def _apply_date_filter(self, value: str) -> None:
+        self.query_one("#date", Input).value = value
 
     @on(DataTable.RowSelected)
     def _row_selected(self, event: DataTable.RowSelected) -> None:
