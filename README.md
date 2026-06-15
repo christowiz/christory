@@ -73,21 +73,24 @@ Three filter inputs at the top narrow the result set independently:
 
 - **search** — matches URL **and** title (case-insensitive `LIKE %term%`)
 - **domain** — matches URL only
-- **date** — date prefix; accepts `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`. Press `Enter` here to open a calendar picker.
+- **date** — accepts:
+  - **prefix** — `YYYY`, `YYYY-MM`, or `YYYY-MM-DD` (e.g. `2026-05`)
+  - **range** — `YYYY-MM-DD..YYYY-MM-DD` (e.g. `2026-05-01..2026-05-15`)
+  - **half-open** — `A..` (from A onwards) or `..B` (up to B)
+  - Press `Enter` here to open a calendar picker.
 
 ### Keybindings
 
 ```
-General    : q / ctrl-c: quit  r: refresh  tab: switch focus
-             /: focus search  enter: focus table / open url
-             ↓ / esc: from filter → table  s/S: sort col / dir
-Filter     : search: URL + title  domain: URL only
-             date: prefix e.g. 2026-05-20 — or enter for calendar
-Navigation : j/↓: down  k/↑: up
-             PageUp / Ctrl-U: page up  PageDown / Ctrl-D: page down
-             g: top  G: bottom
-Commands   : i: info  c: copy URL  a: copy all
-             enter: open URL  esc: dismiss modal
+Filter  : /: focus search   tab: next field   ↓/esc: leave filter
+          enter on date: calendar
+          date syntax: YYYY[-MM[-DD]]  ·  A..B / A.. / ..B
+Move    : j/↓: down   k/↑: up
+          PgUp/Ctrl-U: prev page   PgDn/Ctrl-D: next page
+          g: go to top   G: go to bottom
+Row     : enter: open URL   i: info   c: copy URL   a: copy all
+View    : s/S: sort col / dir   r: refresh
+          q or Ctrl-C: quit   esc: close modal
 ```
 
 ### Calendar picker
@@ -99,22 +102,31 @@ When focused on the date filter, `Enter` opens a month calendar:
 - `[` `]` — month -1 / +1
 - `{` `}` — year -1 / +1
 - `t` — jump to today
-- `Enter` — pick highlighted date, `Esc` — cancel
+- `s` — set range **start** to highlighted day
+- `e` — set range **end** to highlighted day
+- `Enter` — pick highlighted date (single day), `Esc` — close
+
+Setting both `s` and `e` writes an `A..B` range back to the date input
+(picking a single `Enter` day collapses to a prefix filter).
 
 ## Configuration
 
-Edit constants near the top of `christory.py`:
+Edit constants in the module shown:
 
-| Constant            | Default | Purpose                                              |
-| ------------------- | ------- | ---------------------------------------------------- |
-| `CHROME_HISTORY`    | macOS default profile path | Source SQLite DB |
-| `SHOW_VISITS`       | `False` | Show the `Visits` count column                       |
-| `VISITED_WIDTH`     | `16`    | Width of the `Date` column                           |
-| `VISITS_WIDTH`      | `7`     | Width of the `Visits` column (when shown)            |
-| `MIN_TEXT_WIDTH`    | `20`    | Min width for `Title` / `URL` columns                |
-| `MARQUEE_DELAY`     | `1.0`   | Seconds before focused-row text starts scrolling     |
-| `MARQUEE_INTERVAL`  | `0.25`  | Seconds between marquee frames                      |
-| `ROW_LIMIT`         | `10_000`| Max rows returned by a single query                  |
+| Constant               | Module      | Default                    | Purpose                                              |
+| ---------------------- | ----------- | -------------------------- | ---------------------------------------------------- |
+| `DEFAULT_HISTORY_PATH` | `db.py`     | macOS default profile path | Source SQLite DB                                     |
+| `ROW_LIMIT`            | `db.py`     | `10_000`                   | Max rows returned by a single query                  |
+| `SHOW_VISITS`          | `config.py` | `False`                    | Show the `Visits` count column                       |
+| `VISITED_WIDTH`        | `config.py` | `16`                       | Width of the `Date` column                           |
+| `VISITS_WIDTH`         | `config.py` | `7`                        | Width of the `Visits` column (when shown)            |
+| `MIN_TEXT_WIDTH`       | `config.py` | `20`                       | Min width for `Title` / `URL` columns                |
+| `MARQUEE_DELAY`        | `config.py` | `1.0`                      | Seconds before focused-row text starts scrolling     |
+| `MARQUEE_INTERVAL`     | `config.py` | `0.25`                     | Seconds between marquee frames                       |
+| `ACCENT`               | `theme.py`  | `"#fa841a"`                | Brand color (modal borders, cursor, header, keys)    |
+| `KEY_HIGHLIGHT`        | `theme.py`  | `ACCENT`                   | Color used for key bindings in the footer            |
+
+Modules live under `christory/` — e.g. `christory/config.py`.
 
 After editing, reinstall: `uv tool install --reinstall .` (from the project dir).
 
@@ -146,11 +158,11 @@ uv tool install dist/christory-0.1.0-py3-none-any.whl
 ## How it works (brief)
 
 1. On launch, the Chrome `History` SQLite DB is copied to `$TMPDIR/chrome_history_tui.db` (Chrome locks the live DB while running; the copy is read-only).
-2. A single query with three `LIKE` filters fetches up to `ROW_LIMIT` rows.
+2. A single query fetches up to `ROW_LIMIT` rows — `text` and `domain` use `LIKE`, while the date input is parsed by `DateFilter` (`christory/date_filter.py`) into either a `LIKE` prefix or a `>=` / `<=` range clause.
 3. Results render in a Textual `DataTable` with sortable columns (sort indicators `▼`/`▲` on the active column).
 4. The focused row's overflowing title/URL scrolls (marquee) after `MARQUEE_DELAY` and pauses while a modal is open.
 5. `Enter` on a row opens the URL via the OS default handler; `c`/`a` push URL or full row info to the clipboard (OSC52 first, `pbcopy` fallback).
 
 ## License
 
-MIT (or whichever you choose — add a `LICENSE` file).
+MIT
