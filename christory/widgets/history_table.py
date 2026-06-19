@@ -34,10 +34,13 @@ class HistoryTable(DataTable):
         Binding("pagedown", "cursor_page_down", show=False),
         Binding("s", "sort_next", show=False),
         Binding("S", "sort_reverse", show=False),
+        Binding("d", "toggle_group_day", show=False),
+        Binding("h", "toggle_group_hour", show=False),
         Binding("i", "show_info", show=False),
         Binding("c", "copy_url", show=False),
         Binding("a", "copy_all", show=False),
         Binding("r", "refresh_db", show=False),
+        Binding("b", "pick_browser", show=False),
         Binding("q", "quit_app", show=False),
         Binding("slash", "focus_search", show=False),
     ]
@@ -45,11 +48,14 @@ class HistoryTable(DataTable):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.full_rows: dict[object, HistoryRow] = {}
+        self.group_keys: set = set()
         self.col_keys: dict = {}
         self.title_width = 30
         self.url_width = 50
         self.sort_index = 0
         self.sort_descending = SORT_DEFAULT_DESC[SORT_COLUMNS[0]]
+        self.group_day = False
+        self.group_hour = False
         self.marquee = Marquee(
             host=self,
             delay=MARQUEE_DELAY,
@@ -58,37 +64,111 @@ class HistoryTable(DataTable):
             on_resume=self.attach_marquee_to_cursor,
         )
 
+    def _is_group_row(self, row_index: int) -> bool:
+        if row_index < 0 or row_index >= self.row_count:
+            return False
+        try:
+            key = self.coordinate_to_cell_key(Coordinate(row_index, 0)).row_key
+        except Exception:
+            return False
+        return key in self.group_keys
+
+    def _skip_groups(self, row_index: int, step: int) -> int | None:
+        n = self.row_count
+        if not n:
+            return None
+        i = max(0, min(n - 1, row_index))
+        while 0 <= i < n and self._is_group_row(i):
+            i += step
+        if 0 <= i < n:
+            return i
+        opposite = -step
+        i = max(0, min(n - 1, row_index))
+        while 0 <= i < n and self._is_group_row(i):
+            i += opposite
+        return i if 0 <= i < n else None
+
+    def first_data_row(self) -> int | None:
+        return self._skip_groups(0, 1)
+
+    def last_data_row(self) -> int | None:
+        return self._skip_groups(self.row_count - 1, -1)
+
     def action_goto_top(self) -> None:
-        if self.row_count:
-            self.move_cursor(row=0, animate=False)
+        target = self.first_data_row()
+        if target is not None:
+            self.move_cursor(row=target, animate=False)
 
     def action_goto_bottom(self) -> None:
-        if self.row_count:
-            self.move_cursor(row=self.row_count - 1, animate=False)
+        target = self.last_data_row()
+        if target is not None:
+            self.move_cursor(row=target, animate=False)
 
     def _page_size(self) -> int:
         return max(1, self.size.height - 1)
 
+    def action_cursor_down(self) -> None:
+        if not self.row_count:
+            return
+        target = self._skip_groups(self.cursor_row + 1, 1)
+        if target is not None:
+            self.move_cursor(row=target, animate=False)
+
+    def action_cursor_up(self) -> None:
+        if not self.row_count:
+            return
+        target = self._skip_groups(self.cursor_row - 1, -1)
+        if target is not None:
+            self.move_cursor(row=target, animate=False)
+
     def action_cursor_page_down(self) -> None:
         if not self.row_count:
             return
-        new_row = min(self.cursor_row + self._page_size(), self.row_count - 1)
-        self.move_cursor(row=new_row, animate=False)
+        candidate = min(self.cursor_row + self._page_size(), self.row_count - 1)
+        target = self._skip_groups(candidate, 1)
+        if target is not None:
+            self.move_cursor(row=target, animate=False)
 
     def action_cursor_page_up(self) -> None:
         if not self.row_count:
             return
-        new_row = max(self.cursor_row - self._page_size(), 0)
-        self.move_cursor(row=new_row, animate=False)
+        candidate = max(self.cursor_row - self._page_size(), 0)
+        target = self._skip_groups(candidate, -1)
+        if target is not None:
+            self.move_cursor(row=target, animate=False)
 
     def action_sort_next(self) -> None:
         self.sort_index = (self.sort_index + 1) % len(SORT_COLUMNS)
         self.sort_descending = SORT_DEFAULT_DESC[SORT_COLUMNS[self.sort_index]]
-        self.apply_sort()
+        if self.group_day or self.group_hour:
+            self.group_day = False
+            self.group_hour = False
+            self.app.run_search()
+        else:
+            self.apply_sort()
 
     def action_sort_reverse(self) -> None:
         self.sort_descending = not self.sort_descending
-        self.apply_sort()
+        if self.group_day or self.group_hour:
+            self.group_day = False
+            self.group_hour = False
+            self.app.run_search()
+        else:
+            self.apply_sort()
+
+    def action_toggle_group_day(self) -> None:
+        self.group_day = not self.group_day
+        if self.group_day:
+            self.sort_index = 0
+            self.sort_descending = SORT_DEFAULT_DESC[SORT_COLUMNS[0]]
+        self.app.run_search()
+
+    def action_toggle_group_hour(self) -> None:
+        self.group_hour = not self.group_hour
+        if self.group_hour:
+            self.sort_index = 0
+            self.sort_descending = SORT_DEFAULT_DESC[SORT_COLUMNS[0]]
+        self.app.run_search()
 
     def apply_sort(self) -> None:
         self.marquee.detach()
@@ -139,6 +219,9 @@ class HistoryTable(DataTable):
 
     def action_refresh_db(self) -> None:
         self.app.action_refresh()
+
+    def action_pick_browser(self) -> None:
+        self.app.action_pick_browser()
 
     def action_quit_app(self) -> None:
         self.app.exit()

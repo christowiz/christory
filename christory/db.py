@@ -1,4 +1,4 @@
-"""Chrome History SQLite — snapshot + read-only search."""
+"""Chromium History SQLite — snapshot + read-only search for any Chromium browser."""
 from __future__ import annotations
 
 import shutil
@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .browsers import Browser, default as default_browser
 from .date_filter import DateFilter
 
 
-DEFAULT_HISTORY_PATH = Path.home() / "Library/Application Support/Google/Chrome/Default/History"
+DEFAULT_HISTORY_PATH = default_browser().history_path
 WEBKIT_EPOCH_OFFSET = 11_644_473_600
 ROW_LIMIT = 10_000
 
@@ -33,26 +34,37 @@ class HistoryRow:
 
 
 class HistoryDatabase:
-    """Snapshots Chrome's locked History sqlite to a tmp file, then searches it read-only."""
+    """Snapshots a Chromium browser's locked History sqlite to tmp, then searches it read-only."""
 
     _DATE_COLUMN_SQL = (
         "strftime('%Y-%m-%d %H:%M', last_visit_time/1000000 - 11644473600, "
         "'unixepoch', 'localtime')"
     )
 
-    def __init__(self, source: Path = DEFAULT_HISTORY_PATH) -> None:
-        self._source = source
+    def __init__(self, browser: Browser | None = None) -> None:
+        self._browser = browser or default_browser()
         self._snapshot: Path | None = None
+
+    @property
+    def browser(self) -> Browser:
+        return self._browser
 
     @property
     def snapshot_path(self) -> Path | None:
         return self._snapshot
 
+    def set_browser(self, browser: Browser) -> None:
+        self._browser = browser
+        self._snapshot = None
+
     def snapshot(self) -> Path:
-        if not self._source.exists():
-            raise FileNotFoundError(f"Chrome history not found at {self._source}")
-        tmp = Path(tempfile.gettempdir()) / "chrome_history_tui.db"
-        shutil.copyfile(self._source, tmp)
+        source = self._browser.history_path
+        if not source.exists():
+            raise FileNotFoundError(
+                f"{self._browser.label} history not found at {source}"
+            )
+        tmp = Path(tempfile.gettempdir()) / f"christory_{self._browser.key}.db"
+        shutil.copyfile(source, tmp)
         self._snapshot = tmp
         return tmp
 

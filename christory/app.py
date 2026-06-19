@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import webbrowser
 
+from rich.text import Text
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -21,10 +23,19 @@ from .config import (
     VISITED_WIDTH,
     VISITS_WIDTH,
 )
+from . import browsers
+from .browsers import Browser
 from .date_filter import DateFilter
 from .db import HistoryDatabase, HistoryRow
-from .theme import STATUS_ERROR
-from .widgets import DatePickerScreen, FilterInput, HistoryTable, InfoScreen
+from .settings import Settings
+from .theme import ACCENT, STATUS_ERROR
+from .widgets import (
+    BrowserPickerScreen,
+    DatePickerScreen,
+    FilterInput,
+    HistoryTable,
+    InfoScreen,
+)
 
 
 class ChromeHistoryApp(App):
@@ -37,7 +48,10 @@ class ChromeHistoryApp(App):
 
     def __init__(self) -> None:
         super().__init__()
-        self.db = HistoryDatabase()
+        self.settings = Settings.load()
+        browser = browsers.get(self.settings.default_browser) or browsers.default()
+        self.db = HistoryDatabase(browser)
+        self.sub_title = browser.label
         self._resize_debounce = None
 
     def compose(self) -> ComposeResult:
@@ -105,10 +119,40 @@ class ChromeHistoryApp(App):
         table = self.query_one(HistoryTable)
         col = DISPLAY_LABELS[SORT_COLUMNS[table.sort_index]]
         arrow = SORT_DESC_ARROW if table.sort_descending else SORT_ASC_ARROW
-        n = table.row_count
-        self.query_one("#status", Static).update(
-            f"{n} result(s)  ·  sort: {col} {arrow}  ·  snapshot: {self.db.snapshot_path}"
-        )
+        n = len(table.full_rows)
+        parts = [
+            f"browser: {self.db.browser.label}",
+            f"{n} result(s)",
+            f"sort: {col} {arrow}",
+        ]
+        group_label = self._group_status_label(table)
+        if group_label:
+            parts.append(f"group: {group_label}")
+        parts.append(f"snapshot: {self.db.snapshot_path}")
+        self.query_one("#status", Static).update("  ·  ".join(parts))
+
+    def _group_status_label(self, table) -> str:
+        date_filter = DateFilter.parse(self.query_one("#date", Input).value)
+        by_day, by_hour = self._effective_grouping(table, date_filter)
+        active = []
+        if by_day:
+            active.append("day")
+        if by_hour:
+            active.append("hour")
+        if active:
+            return "+".join(active)
+        requested = []
+        if table.group_day:
+            requested.append("day")
+        if table.group_hour:
+            requested.append("hour")
+        return f"{'+'.join(requested)} (n/a)" if requested else ""
+
+    def _effective_grouping(self, table, date_filter: DateFilter) -> tuple[bool, bool]:
+        single_day = date_filter.is_single_day()
+        by_day = table.group_day and not single_day
+        by_hour = table.group_hour
+        return by_day, by_hour
 
     def run_search(self) -> None:
         if self.db.snapshot_path is None:
@@ -121,20 +165,77 @@ class ChromeHistoryApp(App):
         table.marquee.detach()
         table.clear()
         table.full_rows.clear()
-        for row in rows:
-            cells = [row.visited]
-            if SHOW_VISITS:
-                cells.append(str(row.visits))
-            cells.append(row.title[: table.title_width])
-            cells.append(row.url[: table.url_width])
-            key = table.add_row(*cells)
-            table.full_rows[key] = row
-        if not (table.sort_index == 0 and table.sort_descending):
-            table.apply_sort()
+        table.group_keys.clear()
+
+        by_day, by_hour = self._effective_grouping(table, date_filter)
+        grouped = by_day or by_hour
+        show_day_in_hour_only = by_hour and not by_day and not date_filter.is_single_day()
+
+        if grouped:
+            self._populate_grouped(
+                table, rows, by_day=by_day, by_hour=by_hour,
+                show_day_in_hour=show_day_in_hour_only,
+            )
+            table.update_sort_indicators()
+        else:
+            for row in rows:
+                self._add_data_row(table, row)
+            if not (table.sort_index == 0 and table.sort_descending):
+                table.apply_sort()
+
         self.update_sort_status()
         if table.row_count:
-            table.move_cursor(row=0, animate=False)
-            table.attach_marquee_to_cursor()
+            first = table.first_data_row() if grouped else 0
+            if first is not None:
+                table.move_cursor(row=first, animate=False)
+                table.attach_marquee_to_cursor()
+
+    def _add_data_row(self, table: HistoryTable, row: HistoryRow) -> None:
+        cells = [row.visited]
+        if SHOW_VISITS:
+            cells.append(str(row.visits))
+        cells.append(row.title[: table.title_width])
+        cells.append(row.url[: table.url_width])
+        key = table.add_row(*cells)
+        table.full_rows[key] = row
+
+    def _add_group_row(self, table: HistoryTable, label: str) -> None:
+        cells: list = ["", *(("",) if SHOW_VISITS else ()), Text(label, style=f"bold {ACCENT}"), ""]
+        key = table.add_row(*cells)
+        table.group_keys.add(key)
+
+    def _populate_grouped(
+        self,
+        table: HistoryTable,
+        rows: list[HistoryRow],
+        *,
+        by_day: bool,
+        by_hour: bool,
+        show_day_in_hour: bool,
+    ) -> None:
+        last_day: str | None = None
+        last_hour: str | None = None
+        for row in rows:
+            day = row.visited[:10]
+            hour = row.visited[11:13] + ":00" if len(row.visited) >= 13 else "??:00"
+            if by_day and day != last_day:
+                self._add_group_row(table, f"▼ {day}")
+                last_day = day
+                last_hour = None
+            if by_hour:
+                if by_day:
+                    hour_key = hour
+                    hour_label = f"    ▸ {hour}"
+                elif show_day_in_hour:
+                    hour_key = f"{day} {hour}"
+                    hour_label = f"▸ {day} {hour}"
+                else:
+                    hour_key = hour
+                    hour_label = f"▸ {hour}"
+                if hour_key != last_hour:
+                    self._add_group_row(table, hour_label)
+                    last_hour = hour_key
+            self._add_data_row(table, row)
 
     @on(Input.Changed)
     def _filter_changed(self, event: Input.Changed) -> None:
@@ -177,6 +278,27 @@ class ChromeHistoryApp(App):
 
     def show_info(self, row: HistoryRow) -> None:
         self._open_modal(InfoScreen(row))
+
+    def action_pick_browser(self) -> None:
+        self._open_modal(
+            BrowserPickerScreen(
+                current_key=self.db.browser.key,
+                default_key=self.settings.default_browser,
+                on_set_default=self._set_default_browser,
+            ),
+            callback=self._apply_browser_choice,
+        )
+
+    def _apply_browser_choice(self, browser: Browser | None) -> None:
+        if browser is None or browser.key == self.db.browser.key:
+            return
+        self.db.set_browser(browser)
+        self.sub_title = browser.label
+        self.action_refresh()
+
+    def _set_default_browser(self, browser: Browser) -> None:
+        self.settings.default_browser = browser.key
+        self.settings.save()
 
     def action_noop(self) -> None:
         pass

@@ -85,6 +85,21 @@ class DateFilter:
             return ""
         return self.raw
 
+    def is_single_day(self) -> bool:
+        """True when the filter narrows results to one calendar day."""
+        if self.kind is _Kind.PREFIX:
+            return len(self.prefix) == 10 and _parse_date_input(self.prefix) is not None
+        if self.kind is _Kind.RANGE and self.start_input and self.end_input:
+            sd = _parse_date_input(self.start_input)
+            ed = _parse_date_input(self.end_input)
+            return (
+                sd is not None
+                and sd == ed
+                and len(self.start_input) == 10
+                and len(self.end_input) == 10
+            )
+        return False
+
     def calendar_seed(self) -> tuple[date | None, date | None, date | None]:
         """(cursor, start, end) — picker opens reflecting the current filter."""
         if self.kind is _Kind.RANGE:

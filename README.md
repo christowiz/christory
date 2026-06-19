@@ -1,15 +1,17 @@
 # christory
 
-A terminal UI for searching local Chrome history by text, domain, and date.
+A terminal UI for searching local Chromium-based browser history by text, domain, and date.
 
 I got annoyed by the inabilty to filter my browsing history to find things so I created this utility for quick filtering.
 
-Reads `~/Library/Application Support/Google/Chrome/Default/History` (read-only, via a temp snapshot) and renders results in a sortable table with marquee-scrolling rows, a calendar date picker, and OSC52 clipboard support.
+Reads the `History` SQLite from any supported Chromium browser (read-only, via a temp snapshot) and renders results in a sortable table with marquee-scrolling rows, a calendar date picker, and OSC52 clipboard support.
+
+Supported browsers: **Google Chrome**, **Brave**, **Helium**. Press `b` to switch — your active search/domain/date filters carry over.
 
 ## Requirements
 
-- macOS (Chrome history path is macOS-specific; trivial to port)
-- Google Chrome installed, with at least one visit recorded for the `Default` profile
+- macOS (browser history paths are macOS-specific; trivial to port)
+- At least one supported Chromium browser installed (Chrome, Brave, or Helium), with visits in its `Default` profile
 - Python 3.10+
 - [`uv`](https://docs.astral.sh/uv/) (recommended) for install / dev workflows
 
@@ -89,9 +91,21 @@ Move    : j/↓: down   k/↑: up
           PgUp/Ctrl-U: prev page   PgDn/Ctrl-D: next page
           g: go to top   G: go to bottom
 Row     : enter: open URL   i: info   c: copy URL   a: copy all
-View    : s/S: sort col / dir   r: refresh
+View    : s/S: sort col / dir   r: refresh   b: browser
           q or Ctrl-C: quit   esc: close modal
 ```
+
+### Browser picker
+
+Press `b` to open the browser picker. Inside:
+
+- `↑/↓` `j/k` move cursor
+- `c`/`b`/`h` jump-select Chrome / Brave / Helium
+- `Enter` switch to highlighted browser (keeps active filters)
+- `d` mark highlighted browser as the default for future launches
+- `Esc` close
+
+The default-browser preference is saved to `~/.config/christory/settings.json`.
 
 ### Calendar picker
 
